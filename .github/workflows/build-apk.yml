@@ -55,6 +55,10 @@ jobs:
           accept-android-sdk-licenses: true  # 修复3: 使用正确的输入参数
           cmdline-tools-version: '11076708'
 
+      - name: Install Android SDK Components
+        run: |
+        sdkmanager "platforms;android-34" "build-tools;34.0.0" "ndk;26.1.10909125" --no_https
+
       - name: Install dependencies
         run: npm install
 
