@@ -14,19 +14,37 @@ on:
 jobs:
   build-apk:
     name: Build Mobile APK
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04  # 修复4: 显式指定版本，避免 ubuntu-latest 迁移问题
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Cache npm dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-npm-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-npm-
+
+      - name: Cache Gradle dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'  # 修复1: 升级Node.js版本
 
       - name: Set up Java JDK
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5  # 修复2: 升级setup-java到v5
         with:
           distribution: 'temurin'
           java-version: '17'
@@ -34,12 +52,14 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
         with:
-          api-level: 34
-          build-tools-version: '34.0.0'
-          ndk-version: '26.1.10909125'
+          accept-android-sdk-licenses: true  # 修复3: 使用正确的输入参数
+          cmdline-tools-version: '11076708'
 
       - name: Install dependencies
         run: npm install
+
+      - name: Check Capacitor config
+        run: test -f capacitor.config.json && echo "Config found" || (echo "Missing capacitor.config.json" && exit 1)
 
       - name: Prepare web assets
         run: |
@@ -52,7 +72,7 @@ jobs:
           echo "Web assets prepared in www/"
 
       - name: Add Android platform
-        run: npx cap add android || true
+        run: npx cap add android  # 修复4: 去掉 || true，让错误可见
 
       - name: Sync Android project
         run: npx cap sync android
@@ -83,28 +103,9 @@ jobs:
             fi
           fi
 
-      - name: Configure Gradle for release signing
-        run: |
-          BUILD_GRADLE=android/app/build.gradle
-          if [ -f "$BUILD_GRADLE" ]; then
-            # Add release build type with debug signing if not present
-            if ! grep -q "signingConfig signingConfigs.debug" "$BUILD_GRADLE"; then
-              sed -i '/buildTypes {/a \
-                      release {\
-                          minifyEnabled false\
-                          proguardFiles getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro"\
-                          signingConfig signingConfigs.debug\
-                      }' "$BUILD_GRADLE"
-            fi
-          fi
-
       - name: Build Debug APK
         working-directory: android
         run: ./gradlew assembleDebug --no-daemon -x lintVitalAnalyzeRelease
-
-      - name: Build Release APK
-        working-directory: android
-        run: ./gradlew assembleRelease --no-daemon -x lintVitalAnalyzeRelease || true
 
       - name: List built APK files
         run: find android -name "*.apk" -type f
@@ -114,13 +115,5 @@ jobs:
         with:
           name: moxi-watermark-camera-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: warn
-          retention-days: 30
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: moxi-watermark-camera-release-apk
-          path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: warn
           retention-days: 30
